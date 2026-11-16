@@ -380,8 +380,9 @@ function blurPass(s,d,w,h,r,horiz){
     }
   }
 }
+const makeCanvas=(w,h)=>{if(typeof document!=='undefined'){const c=document.createElement('canvas');c.width=w;c.height=h;return c;}return new OffscreenCanvas(w,h);};
 function prep(source,w,h){
-  const c=document.createElement('canvas');c.width=w;c.height=h;
+  const c=makeCanvas(w,h);
   const x=c.getContext('2d',{willReadFrequently:true});x.imageSmoothingQuality='high';x.drawImage(source,0,0,w,h);
   const img=x.getImageData(0,0,w,h),data=img.data,L=new Float32Array(w*h);
   for(let i=0,j=0;i<L.length;i++,j+=4)L[i]=(.2126*data[j]+.7152*data[j+1]+.0722*data[j+2])/255;
@@ -499,7 +500,7 @@ function syncSliders(){
 
 /* ---------- preview, split view, edge print ---------- */
 let raf=0,comparing=false,splitOn=false,splitX=.5;
-function schedule(){if(!raf)raf=requestAnimationFrame(()=>{raf=0;draw();});}
+function schedule(){if(!raf)raf=requestAnimationFrame(()=>{raf=0;draw();});prefetch();}
 function draw(){
   const p=ph(),c=$('preview'),d=p.prev;
   $('view').style.setProperty('--ar',`${d.w}/${d.h}`);
@@ -601,7 +602,7 @@ function refreshStrip(){
   $('saveOne').textContent=real>1?'Save this one':'Save photo';
   $('linkRow').hidden=photos.length<2;
 }
-function select(i){cur=i;updateLookUI();syncSliders();renderLookTiles();refreshStrip();draw();}
+function select(i){cur=i;updateLookUI();syncSliders();renderLookTiles();refreshStrip();draw();prefetch();}
 function removePhoto(i){
   photos.splice(i,1);
   if(!photos.length)photos.push(newPhoto('Sample beach',null,SAMPLE,1500,1000,true));
@@ -681,36 +682,86 @@ function download(name,blob){
   const a=document.createElement('a'),u=URL.createObjectURL(blob);
   a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),60000);
 }
-$('readySave').addEventListener('click',async()=>{
-  const items=readyItems;
+async function zipDownload(items){
+  if(!window.JSZip){items.forEach(([n,b])=>download(n,b));return;}
+  const z=new JSZip(),used={};
+  items.forEach(([n,b])=>{let nm=n;while(used[nm])nm=nm.replace(/(\.jpg)$/,'-1$1');used[nm]=1;z.file(nm,b);});
+  download('look-lab-photos.zip',await z.generateAsync({type:'blob'}));
+}
+/* Opens the share sheet while the tap still counts; if the browser says the tap expired, the ready dialog asks for one more tap. */
+async function deliver(items){
   if(canShare(items)){
     try{await navigator.share({files:toFiles(items)});$('ready').close();toast('Saved');}
-    catch(e){if(e.name!=='AbortError')toast('Sharing failed. Long-press a photo to save it instead.',6000);}
+    catch(e){
+      if(e.name==='NotAllowedError'&&!$('ready').open)showReady(items);
+      else if(e.name!=='AbortError')toast('Sharing failed. Long-press a photo to save it instead.',6000);
+    }
     return;
   }
   if(items.length===1){download(...items[0]);$('ready').close();toast('Downloaded');return;}
-  if(!window.JSZip){items.forEach(([n,b])=>download(n,b));$('ready').close();return;}
-  $('readySave').disabled=true;$('readySave').textContent='Packing zip';
-  try{
-    const z=new JSZip(),used={};
-    items.forEach(([n,b])=>{let nm=n;while(used[nm])nm=nm.replace(/(\.jpg)$/,'-1$1');used[nm]=1;z.file(nm,b);});
-    download('look-lab-photos.zip',await z.generateAsync({type:'blob'}));$('ready').close();toast('Downloaded');
-  }catch{toast('Packing the zip failed. Try fewer photos at once.',6000);}
-  finally{$('readySave').disabled=false;}
-});
+  try{await zipDownload(items);$('ready').close();toast('Downloaded');}
+  catch{toast('Packing the zip failed. Try fewer photos at once.',6000);}
+}
+$('readySave').addEventListener('click',()=>deliver(readyItems));
+
+/* Full-size renders happen ahead of time in a worker, so Save can open the share sheet instantly. */
+const cache=new Map(),inflight=new Map(),waits=new Map();
+let worker=null,wid=0;
+try{
+  if(typeof OffscreenCanvas!=='undefined'&&'convertToBlob' in OffscreenCanvas.prototype){
+    const src=[
+      `const N=${N},LINMAX=${LINMAX};const s2l=${s2l};const l2s=${l2s};`,
+      `const TOLIN=new Float32Array(256);for(let i=0;i<256;i++)TOLIN[i]=s2l(i/255);`,
+      `const LINS=new Float32Array(N);for(let i=0;i<N;i++)LINS[i]=l2s(i/(N-1)*LINMAX);`,
+      `const fit=${fit};const makeCanvas=${makeCanvas};`,
+      ...[toneLUT,tintVec,bw,render,blurPass,prep].map(String),
+      `onmessage=async e=>{const{id,src,p}=e.data;try{const bmp=src instanceof Blob?await createImageBitmap(src):src;const[w,h]=fit(bmp.width,bmp.height,8000);const d=prep(bmp,w,h);if(bmp.close)bmp.close();const c=new OffscreenCanvas(w,h);const img=new ImageData(w,h);render(d,p,img.data);c.getContext('2d').putImageData(img,0,0);postMessage({id,blob:await c.convertToBlob({type:'image/jpeg',quality:.92})});}catch(err){postMessage({id,error:String(err)});}};`
+    ].join('\n');
+    worker=new Worker(URL.createObjectURL(new Blob([src],{type:'text/javascript'})));
+    worker.onmessage=e=>{const w=waits.get(e.data.id);if(!w)return;waits.delete(e.data.id);e.data.error?w.rej(new Error(e.data.error)):w.res(e.data.blob);};
+    worker.onerror=()=>{worker=null;waits.forEach(w=>w.rej(new Error('worker')));waits.clear();};
+  }
+}catch{worker=null;}
+async function workerBlob(q,p){
+  const id=++wid;let src=q.file,tr=[];
+  if(q.sample){src=await createImageBitmap(SAMPLE);tr=[src];}
+  return new Promise((res,rej)=>{waits.set(id,{res,rej});worker.postMessage({id,src,p},tr);});
+}
+const keyOf=q=>q.id+'|'+JSON.stringify(eff(q));
+const isReady=q=>cache.get(q.id)?.key===keyOf(q);
+function getBlob(q){
+  const key=keyOf(q),c=cache.get(q.id);
+  if(c&&c.key===key)return Promise.resolve(c.blob);
+  if(inflight.has(key))return inflight.get(key);
+  const pr=(worker?workerBlob(q,eff(q)).catch(()=>{worker=null;return exportBlob(q);}):exportBlob(q))
+    .then(b=>{cache.set(q.id,{key,blob:b});inflight.delete(key);return b;},e=>{inflight.delete(key);throw e;});
+  inflight.set(key,pr);return pr;
+}
+let prefT=0,prefGen=0;
+function prefetch(){
+  clearTimeout(prefT);if(!worker)return;
+  prefT=setTimeout(async()=>{
+    const gen=++prefGen,c=ph(),order=[c,...photos.filter(q=>q!==c&&!q.sample)];
+    for(const q of order){if(gen!==prefGen||!photos.includes(q))return;try{await getBlob(q);}catch{}}
+  },800);
+}
 $('readyClose').addEventListener('click',()=>$('ready').close());
 $('saveOne').addEventListener('click',async()=>{
-  const q=ph();setBusy(true);busy('Preparing full-size photo…');
-  await new Promise(r=>setTimeout(r,30));
-  try{const blob=await exportBlob(q);const n=outName(q);busy('');showReady([[n,blob]]);}
+  const q=ph();
+  if(!isReady(q)){setBusy(true);busy('Preparing full-size photo…');if(!worker)await new Promise(r=>setTimeout(r,30));}
+  try{const blob=await getBlob(q);busy('');await deliver([[outName(q),blob]]);}
   catch{toast('Saving failed. The photo may be too large for this device. Try again.',6000);}
   finally{busy('');setBusy(false);}
 });
 $('saveAll').addEventListener('click',async()=>{
-  const list=photos.filter(q=>!q.sample),items=[];setBusy(true);
+  const list=photos.filter(q=>!q.sample),items=[];
+  const allReady=list.every(isReady);if(!allReady)setBusy(true);
   try{
-    for(let i=0;i<list.length;i++){busy(`Preparing ${i+1} of ${list.length}…`);await new Promise(r=>setTimeout(r,30));items.push([outName(list[i]),await exportBlob(list[i])]);}
-    busy('');showReady(items);
+    for(let i=0;i<list.length;i++){
+      if(!isReady(list[i])){busy(`Preparing ${i+1} of ${list.length}…`);if(!worker)await new Promise(r=>setTimeout(r,30));}
+      items.push([outName(list[i]),await getBlob(list[i])]);
+    }
+    busy('');await deliver(items);
   }catch{toast('Saving failed partway. Try saving fewer photos at once.',6000);}
   finally{busy('');setBusy(false);}
 });
