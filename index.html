@@ -285,7 +285,7 @@ const DEF={exposure:0,contrast:0,highlights:0,shadows:0,whites:0,blacks:0,temp:0
   orangeHue:0,orangeSat:0,greenHue:0,greenSat:0,blueHue:0,blueSat:0,
   shadowHue:200,shadowAmt:0,highlightHue:40,highlightAmt:0,clarity:0,fade:0,grain:0,vignette:0};
 const FIXED=new Set(['shadowHue','highlightHue']);
-const FAMS=[['mine','My looks'],['basic','Basic'],['moody','Moody travel'],['ricoh','Ricoh GR recipes'],['film','Film digital']];
+const FAMS=[['mine','My looks'],['basic','Basic'],['moody','Moody travel'],['ricoh','Ricoh GR recipes'],['film','Film digital'],['fuji','Fujifilm recipes'],['social','TikTok & IG trends']];
 const LOOKS=[
  {id:'original',fam:'basic',name:'Original',note:'Your photo as shot. Use the Adjust tab to change it by hand.',p:{}},
  {id:'wanderer',fam:'moody',name:'Wanderer',note:'Warm, faded travel look with muted greens and blues and soft shadows.',
@@ -322,6 +322,26 @@ const LOOKS=[
   p:{exposure:.1,contrast:15,highlights:-20,shadows:20,temp:30,tint:8,vibrance:15,orangeSat:20,blueSat:-15,shadowHue:265,shadowAmt:12,highlightHue:40,highlightAmt:25,fade:8,vignette:-15}},
  {id:'mono',fam:'basic',name:'Mono',note:'Black and white with punchy contrast and grain.',
   p:{saturation:-100,contrast:35,highlights:-15,blacks:-15,clarity:20,fade:5,grain:30,vignette:-20}},
+ {id:'reggie',fam:'fuji',name:'Reggie’s Portra',note:'Warm skin, soft contrast, natural colour. Translated from the most popular Fujifilm recipe of 2026 (Classic Chrome, WB +2 red, −4 blue).',
+  p:{exposure:.1,contrast:-8,highlights:-25,shadows:15,blacks:-5,temp:14,tint:5,vibrance:8,saturation:-10,orangeHue:3,orangeSat:10,greenHue:12,greenSat:-25,blueHue:6,blueSat:-12,shadowHue:200,shadowAmt:8,highlightHue:38,highlightAmt:15,grain:10}},
+ {id:'kodachrome',fam:'fuji',name:'Kodachrome 64',note:'Deep reds, strong blues and documentary contrast, after the popular Kodachrome 64 recipe.',
+  p:{contrast:25,highlights:-15,blacks:-15,temp:4,saturation:10,orangeHue:-6,orangeSat:15,greenSat:-15,blueHue:8,blueSat:25,shadowHue:210,shadowAmt:10,clarity:15,grain:8,vignette:-10}},
+ {id:'arizona',fam:'fuji',name:'Vibrant Arizona',note:'Warm pastel colour with a cinematic mood, after the Vibrant Arizona recipe (4350K, +6 red, −8 blue).',
+  p:{exposure:.1,contrast:5,highlights:-40,shadows:20,temp:22,tint:8,saturation:15,orangeSat:15,blueHue:10,blueSat:-10,greenHue:10,greenSat:-15,fade:12,highlightHue:35,highlightAmt:15,grain:12}},
+ {id:'superia',fam:'fuji',name:'Reggie’s Superia',note:'Punchier than Reggie’s Portra, with cinematic shadows and green-cyan colour. Good for daytime city photos.',
+  p:{contrast:20,highlights:-25,shadows:5,temp:6,tint:3,saturation:5,orangeSat:8,greenHue:18,greenSat:-10,blueHue:-8,blueSat:15,shadowHue:185,shadowAmt:22,highlightHue:45,highlightAmt:12,grain:30,vignette:-10}},
+ {id:'pacific',fam:'fuji',name:'Pacific Blues',note:'Cool, blue-cyan Classic Negative look with muted skin and teal shadows.',
+  p:{contrast:15,highlights:-20,temp:-8,tint:-6,saturation:-10,orangeSat:-10,greenHue:20,greenSat:-20,blueHue:-10,blueSat:20,shadowHue:195,shadowAmt:20,highlightHue:50,highlightAmt:10,fade:8,grain:15}},
+ {id:'cinestill',fam:'fuji',name:'CineStill 800T',note:'Cool tungsten night look: teal shadows, warm street lights, heavy grain. Best for photos taken at night.',
+  p:{contrast:10,highlights:-30,shadows:10,temp:-30,tint:-6,orangeSat:20,blueSat:20,shadowHue:190,shadowAmt:30,highlightHue:30,highlightAmt:20,fade:6,grain:40}},
+ {id:'trix',fam:'fuji',name:'Kodak Tri-X 400',note:'Gritty documentary black and white with bright shadows, strong grain and texture.',
+  p:{saturation:-100,contrast:45,shadows:15,blacks:-30,whites:10,clarity:40,grain:50,vignette:-15}},
+ {id:'modern',fam:'social',name:'Clean Modern',note:'The bright, punchy, polished look that is popular on TikTok and Instagram now: clear blues, soft highlights.',
+  p:{exposure:.3,contrast:10,highlights:-25,shadows:15,vibrance:15,blueSat:12,clarity:5}},
+ {id:'oldmoney',fam:'social',name:'Old Money',note:'Warm, muted and low contrast, with earthy beiges and greens and a faint fade.',
+  p:{exposure:.05,contrast:-15,highlights:-25,shadows:10,blacks:12,temp:12,tint:3,saturation:-25,orangeHue:5,orangeSat:-5,greenHue:15,greenSat:-35,blueSat:-35,fade:18,shadowHue:30,shadowAmt:10,highlightHue:40,highlightAmt:15,grain:10,vignette:-10}},
+ {id:'glowfilm',fam:'social',name:'Glowy Film',note:'Soft, glowy retro film look from viral TikTok edits: lifted blacks, gentle highlights, low clarity.',
+  p:{exposure:.35,contrast:-12,highlights:-35,shadows:30,whites:12,blacks:18,temp:5,saturation:-8,clarity:-20,fade:10,grain:15}},
 ];
 const LOOK=Object.fromEntries(LOOKS.map(l=>[l.id,l]));
 try{const s=JSON.parse(localStorage.getItem('looklab-custom'));if(Array.isArray(s))s.filter(c=>c&&c.id&&c.p&&!LOOK[c.id]).forEach(c=>{const l={id:c.id,fam:'mine',name:String(c.name),note:String(c.note||''),p:c.p};LOOKS.push(l);LOOK[l.id]=l;});}catch{}
