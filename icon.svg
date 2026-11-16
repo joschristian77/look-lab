@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" fill="#151515"/>
+  <rect y="150" width="1024" height="724" fill="#0b0b0b"/>
+  <g fill="#151515">
+    <rect x="34" y="186" width="56" height="74" rx="10"/><rect x="164" y="186" width="56" height="74" rx="10"/><rect x="294" y="186" width="56" height="74" rx="10"/><rect x="424" y="186" width="56" height="74" rx="10"/><rect x="554" y="186" width="56" height="74" rx="10"/><rect x="684" y="186" width="56" height="74" rx="10"/><rect x="814" y="186" width="56" height="74" rx="10"/><rect x="944" y="186" width="56" height="74" rx="10"/>
+    <rect x="34" y="764" width="56" height="74" rx="10"/><rect x="164" y="764" width="56" height="74" rx="10"/><rect x="294" y="764" width="56" height="74" rx="10"/><rect x="424" y="764" width="56" height="74" rx="10"/><rect x="554" y="764" width="56" height="74" rx="10"/><rect x="684" y="764" width="56" height="74" rx="10"/><rect x="814" y="764" width="56" height="74" rx="10"/><rect x="944" y="764" width="56" height="74" rx="10"/>
+  </g>
+  <clipPath id="w"><rect x="96" y="300" width="832" height="424" rx="18"/></clipPath>
+  <g clip-path="url(#w)">
+    <rect x="96" y="300" width="832" height="260" fill="#5fa3c4"/>
+    <rect x="96" y="470" width="832" height="90" fill="#bcd6dd"/>
+    <circle cx="660" cy="500" r="64" fill="#e8a54b"/>
+    <rect x="96" y="560" width="832" height="80" fill="#1f7f93"/>
+    <rect x="96" y="640" width="832" height="84" fill="#e2c597"/>
+  </g>
+  <path d="M122 274l-26-14v28z" fill="#e8a54b"/>
+  <rect x="136" y="266" width="64" height="16" rx="3" fill="#e8a54b"/>
+  <rect x="214" y="266" width="28" height="16" rx="3" fill="#e8a54b"/>
+</svg>
