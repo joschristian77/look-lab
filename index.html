@@ -392,7 +392,7 @@ function tintVec(h){
 function bw(h,c,w){let d=Math.abs(((h-c+540)%360)-180);let t=1-d/w;return t<=0?0:t*t*(3-2*t);}
 
 function render(d,p,out){
-  const{w,h,data:src,L:Ls,B:Bl,cell}=d;
+  const{w,h,data:src,B:Bl,bw:BW,bh:BH,cell}=d,bsx=BW/w,bsy=BH/h;
   const lut=toneLUT(p),em=Math.pow(2,p.exposure),t=p.temp/100,m=p.tint/100,sc=(N-1)/LINMAX;
   const kr=em*(1+.3*t)*sc,kg=em*(1-.25*m)*sc,kb=em*(1-.3*t)*sc;
   const oH=p.orangeHue*.3,gH=p.greenHue*.3,bH=p.blueHue*.3,oS=p.orangeSat/100,gS=p.greenSat/100,bS=p.blueSat/100;
@@ -402,14 +402,14 @@ function render(d,p,out){
   const vg=p.vignette/100*.75,gr=p.grain/100*.1,gs=1/cell,cx=w/2,cy=h/2,ix=1/cx,iy=1/cy;
   const N1=N-1;
   for(let y=0;y<h;y++){
-    const dy=(y-cy)*iy,dy2=dy*dy,gy=(y*gs)|0;
+    const dy=(y-cy)*iy,dy2=dy*dy,gy=(y*gs)|0,brow=Math.min(BH-1,(y*bsy)|0)*BW;
     for(let x=0;x<w;x++){
       const i=y*w+x,j=i*4;
       let v=TOLIN[src[j]]*kr;let r=lut[v<N1?v|0:N1];
       v=TOLIN[src[j+1]]*kg;let g=lut[v<N1?v|0:N1];
       v=TOLIN[src[j+2]]*kb;let b=lut[v<N1?v|0:N1];
       let L=.2126*r+.7152*g+.0722*b;
-      if(cl){const a=cl*(Ls[i]-Bl[i])*4*L*(1-L);r+=a;g+=a;b+=a;L+=a;}
+      if(cl){const ls=(.2126*src[j]+.7152*src[j+1]+.0722*src[j+2])/255,a=cl*(ls-Bl[brow+Math.min(BW-1,(x*bsx)|0)])*4*L*(1-L);r+=a;g+=a;b+=a;L+=a;}
       if(bands){
         const mx=r>g?(r>b?r:b):(g>b?g:b),mn=r<g?(r<b?r:b):(g<b?g:b),dd=mx-mn;
         if(dd>1e-4&&mx>0){
@@ -460,23 +460,30 @@ function blurPass(s,d,w,h,r,horiz){
   }
 }
 const makeCanvas=(w,h)=>{if(typeof document!=='undefined'){const c=document.createElement('canvas');c.width=w;c.height=h;return c;}return new OffscreenCanvas(w,h);};
-function prep(source,w,h){
-  const c=makeCanvas(w,h);
-  const x=c.getContext('2d',{willReadFrequently:true});x.imageSmoothingQuality='high';x.drawImage(source,0,0,w,h);
-  const img=x.getImageData(0,0,w,h),data=img.data,L=new Float32Array(w*h);
-  for(let i=0,j=0;i<L.length;i++,j+=4)L[i]=(.2126*data[j]+.7152*data[j+1]+.0722*data[j+2])/255;
-  const r=Math.max(1,Math.round(Math.max(w,h)*.012));
-  let a=new Float32Array(L),b=new Float32Array(L.length);
-  for(let k=0;k<2;k++){blurPass(a,b,w,h,r,true);blurPass(b,a,w,h,r,false);}
-  return{w,h,data,img,L,B:a,cell:Math.max(1,Math.max(w,h)/1500)};
+function prep(source,w,h,keep){
+  const c=makeCanvas(w,h),x=c.getContext('2d',{willReadFrequently:true});x.imageSmoothingQuality='high';x.drawImage(source,0,0,w,h);
+  const img=x.getImageData(0,0,w,h);
+  /* Clarity only needs a heavily blurred brightness map, so it is built at 400px or less and sampled up. Full-size maps used to cost hundreds of MB and crash iPhone Safari. */
+  const s=Math.min(1,400/Math.max(w,h)),bw=Math.max(1,Math.round(w*s)),bh=Math.max(1,Math.round(h*s));
+  let sd=img.data;
+  if(s<1){const sc=makeCanvas(bw,bh),sx=sc.getContext('2d',{willReadFrequently:true});sx.imageSmoothingQuality='high';sx.drawImage(c,0,0,bw,bh);sd=sx.getImageData(0,0,bw,bh).data;}
+  const n=bw*bh,a=new Float32Array(n),b=new Float32Array(n);
+  for(let i=0,j=0;i<n;i++,j+=4)a[i]=(.2126*sd[j]+.7152*sd[j+1]+.0722*sd[j+2])/255;
+  const r=Math.max(1,Math.round(Math.max(bw,bh)*.012));
+  for(let k=0;k<2;k++){blurPass(a,b,bw,bh,r,true);blurPass(b,a,bw,bh,r,false);}
+  return{w,h,data:img.data,img,B:a,bw,bh,cell:Math.max(1,Math.max(w,h)/1500),canvas:keep?c:null,ctx:keep?x:null};
 }
 const fit=(w,h,m)=>{const s=Math.min(1,m/Math.max(w,h));return[Math.max(1,Math.round(w*s)),Math.max(1,Math.round(h*s))];};
+const fitPx=(w,h,maxPx,maxEdge)=>{const s=Math.min(1,maxEdge/Math.max(w,h),Math.sqrt(maxPx/(w*h)));return[Math.max(1,Math.round(w*s)),Math.max(1,Math.round(h*s))];};
+const PHONE=typeof navigator!=='undefined'&&(/iPhone|iPad|iPod|Android/i.test(navigator.userAgent||'')||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1));
+/* iPhone Safari refuses canvases over about 16.7M pixels and reloads tabs that use too much memory, so phone saves are capped at 12MP. */
+const EXPORT_MAX=PHONE?[12e6,6000]:[40e6,8000];
 
 function paint(canvas,d,p){
   if(canvas.width!==d.w||canvas.height!==d.h){canvas.width=d.w;canvas.height=d.h;}
   const ctx=canvas.getContext('2d');
-  if(!d.out)d.out=ctx.createImageData(d.w,d.h);
-  render(d,p,d.out.data);ctx.putImageData(d.out,0,0);
+  if(!canvas._out||canvas._out.width!==d.w||canvas._out.height!==d.h)canvas._out=ctx.createImageData(d.w,d.h);
+  render(d,p,canvas._out.data);ctx.putImageData(canvas._out,0,0);
 }
 
 /* ---------- sample photo ---------- */
@@ -511,7 +518,7 @@ let photos=[],cur=0,uid=0;
 const $=id=>document.getElementById(id);
 const linked=$('linked');
 function newPhoto(name,file,source,w,h,sample=false,from=null){
-  return{id:++uid,name,file,sample,w,h,prev:prep(source,...fit(w,h,1600)),thumb:prep(source,...fit(w,h,260)),
+  return{id:++uid,name,file,sample,w,h,prev:prep(source,...fit(w,h,PHONE?1280:1600)),thumb:prep(source,...fit(w,h,260)),
     look:from?from.look:'original',strength:from?from.strength:100,adj:from?{...from.adj}:{}};
 }
 function eff(ph,look=ph.look,s=ph.strength/100,adj=ph.adj){
@@ -736,10 +743,10 @@ function toast(msg,ms=3000){const t=$('toast');t.textContent=msg;t.hidden=false;
 async function exportBlob(q){
   let src,w,h,bmp=null;
   if(q.sample){src=SAMPLE;w=1500;h=1000;}else{bmp=await createImageBitmap(q.file);src=bmp;w=bmp.width;h=bmp.height;}
-  [w,h]=fit(w,h,8000);
-  const d=prep(src,w,h);if(bmp)bmp.close();
-  const c=document.createElement('canvas');paint(c,d,eff(q));
-  return new Promise((res,rej)=>c.toBlob(b=>b?res(b):rej(new Error('encode')),'image/jpeg',.92));
+  [w,h]=fitPx(w,h,...EXPORT_MAX);
+  const d=prep(src,w,h,true);if(bmp)bmp.close();
+  render(d,eff(q),d.data);d.ctx.putImageData(d.img,0,0);
+  return new Promise((res,rej)=>d.canvas.toBlob(b=>b?res(b):rej(new Error('encode')),'image/jpeg',.92));
 }
 const outName=q=>q.name.replace(/\.[^.]+$/,'').replace(/[\\/:*?"<>|]/g,'_')+(q.look==='original'?'-edit':'-'+q.look)+'.jpg';
 function setBusy(on){['saveOne','saveAll','addBtn'].forEach(id=>$(id).disabled=on);}
@@ -796,34 +803,36 @@ try{
       `const LINS=new Float32Array(N);for(let i=0;i<N;i++)LINS[i]=l2s(i/(N-1)*LINMAX);`,
       `const fit=${fit};const makeCanvas=${makeCanvas};`,
       ...[toneLUT,tintVec,bw,render,blurPass,prep].map(String),
-      `onmessage=async e=>{const{id,src,p}=e.data;try{const bmp=src instanceof Blob?await createImageBitmap(src):src;const[w,h]=fit(bmp.width,bmp.height,8000);const d=prep(bmp,w,h);if(bmp.close)bmp.close();const c=new OffscreenCanvas(w,h);const img=new ImageData(w,h);render(d,p,img.data);c.getContext('2d').putImageData(img,0,0);postMessage({id,blob:await c.convertToBlob({type:'image/jpeg',quality:.92})});}catch(err){postMessage({id,error:String(err)});}};`
+      /* One render at a time, rendered in place, and background renders that a newer one has replaced are skipped, so memory never stacks up. */
+      `let chain=Promise.resolve(),newest=0;onmessage=e=>{const m=e.data;if(m.pf)newest=m.id;chain=chain.then(()=>m.pf&&m.id!==newest?postMessage({id:m.id,error:'stale'}):job(m));};`,
+      `async function job({id,src,p,w,h}){try{let bmp=src;if(src instanceof Blob){try{bmp=await createImageBitmap(src,{resizeWidth:w,resizeHeight:h,resizeQuality:'high'});}catch{bmp=await createImageBitmap(src);}}const d=prep(bmp,w,h,true);if(bmp.close)bmp.close();render(d,p,d.data);d.ctx.putImageData(d.img,0,0);postMessage({id,blob:await d.canvas.convertToBlob({type:'image/jpeg',quality:.92})});}catch(err){postMessage({id,error:String(err)});}}`
     ].join('\n');
     worker=new Worker(URL.createObjectURL(new Blob([src],{type:'text/javascript'})));
     worker.onmessage=e=>{const w=waits.get(e.data.id);if(!w)return;waits.delete(e.data.id);e.data.error?w.rej(new Error(e.data.error)):w.res(e.data.blob);};
     worker.onerror=()=>{worker=null;waits.forEach(w=>w.rej(new Error('worker')));waits.clear();};
   }
 }catch{worker=null;}
-async function workerBlob(q,p){
-  const id=++wid;let src=q.file,tr=[];
+async function workerBlob(q,p,pf){
+  const id=++wid,[w,h]=fitPx(q.w,q.h,...EXPORT_MAX);let src=q.file,tr=[];
   if(q.sample){src=await createImageBitmap(SAMPLE);tr=[src];}
-  return new Promise((res,rej)=>{waits.set(id,{res,rej});worker.postMessage({id,src,p},tr);});
+  return new Promise((res,rej)=>{waits.set(id,{res,rej});worker.postMessage({id,src,p,w,h,pf:!!pf},tr);});
 }
 const keyOf=q=>q.id+'|'+JSON.stringify(eff(q));
 const isReady=q=>cache.get(q.id)?.key===keyOf(q);
-function getBlob(q){
+function getBlob(q,pf){
   const key=keyOf(q),c=cache.get(q.id);
   if(c&&c.key===key)return Promise.resolve(c.blob);
-  if(inflight.has(key))return inflight.get(key);
-  const pr=(worker?workerBlob(q,eff(q)).catch(()=>{worker=null;return exportBlob(q);}):exportBlob(q))
-    .then(b=>{cache.set(q.id,{key,blob:b});inflight.delete(key);return b;},e=>{inflight.delete(key);throw e;});
+  if(inflight.has(key))return pf?inflight.get(key):inflight.get(key).catch(()=>getBlob(q));
+  const pr=(worker?workerBlob(q,eff(q),pf).catch(e=>{if(e.message==='stale')throw e;worker=null;return exportBlob(q);}):exportBlob(q))
+    .then(b=>{cache.delete(q.id);cache.set(q.id,{key,blob:b});while(cache.size>4)cache.delete(cache.keys().next().value);inflight.delete(key);return b;},e=>{inflight.delete(key);throw e;});
   inflight.set(key,pr);return pr;
 }
 let prefT=0,prefGen=0;
 function prefetch(){
   clearTimeout(prefT);if(!worker)return;
   prefT=setTimeout(async()=>{
-    const gen=++prefGen,c=ph(),order=[c,...photos.filter(q=>q!==c&&!q.sample)];
-    for(const q of order){if(gen!==prefGen||!photos.includes(q))return;try{await getBlob(q);}catch{}}
+    const gen=++prefGen,q=ph();
+    if(gen===prefGen&&photos.includes(q))try{await getBlob(q,true);}catch{}
   },800);
 }
 $('readyClose').addEventListener('click',()=>$('ready').close());
